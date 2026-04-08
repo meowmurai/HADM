@@ -24,12 +24,14 @@ inference.output_dir = "demo/outputs"
 # Enhanced inference for subtle artifact detection
 # Multi-scale runs inference at multiple resolutions and merges results
 inference.multiscale = True
-inference.multiscale_scales = [0.75, 1.0, 1.25]
+inference.multiscale_scales = [0.5, 0.75, 1.0, 1.25, 1.5]
 # Crop-based inference splits non-square images into overlapping crops
 # to avoid heavy downscaling of portrait/landscape images
 inference.crop_inference = True
-inference.crop_overlap = 0.25
-inference.crop_nms_thresh = 0.5
+inference.crop_overlap = 0.5
+inference.crop_nms_thresh = 0.6
+# Horizontal flip TTA — run flipped inference and merge for +2-5% recall
+inference.flip_tta = True
 
 dataloader.train.dataset = L(get_detection_dataset_dicts)(
     names=[

@@ -375,12 +375,14 @@ class DefaultInferencer:
         inference_cfg = getattr(cfg, "inference", None)
         self.multiscale_enabled = False
         self.crop_enabled = False
+        self.flip_tta = False
         if inference_cfg is not None:
             self.multiscale_enabled = getattr(inference_cfg, "multiscale", False)
             self.multiscale_scales = list(getattr(inference_cfg, "multiscale_scales", [0.75, 1.0, 1.25]))
             self.crop_enabled = getattr(inference_cfg, "crop_inference", False)
             self.crop_overlap = float(getattr(inference_cfg, "crop_overlap", 0.25))
             self.crop_nms_thresh = float(getattr(inference_cfg, "crop_nms_thresh", 0.5))
+            self.flip_tta = getattr(inference_cfg, "flip_tta", False)
 
     def _infer_single(self, original_image, bbox=None):
         """Run inference on a single image at its current scale."""
@@ -537,6 +539,54 @@ class DefaultInferencer:
                             # Scale boxes back to original image coordinates
                             instances.pred_boxes.tensor /= scale
                             all_instances.append(instances)
+
+            # --- Horizontal flip TTA ---
+            if self.flip_tta and bbox is None:
+                flipped_image = original_image[:, ::-1, :]
+                # Run the same multi-scale / crop pipeline on the flipped image
+                flip_instances = []
+
+                if self.crop_enabled and self._needs_cropping(height, width):
+                    crops = self._generate_crops(height, width)
+                    for (x1, y1, x2, y2) in crops:
+                        crop = flipped_image[y1:y2, x1:x2].copy()
+                        preds = self._infer_single(crop, bbox=None)
+                        instances = preds["instances"]
+                        if len(instances) > 0:
+                            instances.pred_boxes.tensor[:, 0] += x1
+                            instances.pred_boxes.tensor[:, 1] += y1
+                            instances.pred_boxes.tensor[:, 2] += x1
+                            instances.pred_boxes.tensor[:, 3] += y1
+                            flip_instances.append(instances)
+
+                if self.multiscale_enabled:
+                    import cv2
+                    for scale in self.multiscale_scales:
+                        if scale == 1.0 and not self.crop_enabled:
+                            preds = self._infer_single(flipped_image, bbox=None)
+                            flip_instances.append(preds["instances"])
+                        elif scale != 1.0:
+                            new_h, new_w = int(height * scale), int(width * scale)
+                            scaled_img = cv2.resize(flipped_image, (new_w, new_h),
+                                                    interpolation=cv2.INTER_LINEAR)
+                            preds = self._infer_single(scaled_img, bbox=None)
+                            instances = preds["instances"]
+                            if len(instances) > 0:
+                                instances.pred_boxes.tensor /= scale
+                                flip_instances.append(instances)
+                elif not flip_instances:
+                    preds = self._infer_single(flipped_image, bbox=None)
+                    flip_instances.append(preds["instances"])
+
+                # Mirror flipped boxes back to original coordinates
+                for inst in flip_instances:
+                    if len(inst) > 0:
+                        boxes = inst.pred_boxes.tensor
+                        x1_orig = width - boxes[:, 2]
+                        x2_orig = width - boxes[:, 0]
+                        boxes[:, 0] = x1_orig
+                        boxes[:, 2] = x2_orig
+                        all_instances.append(inst)
 
             # --- Standard single-scale inference (fallback or when no enhancements) ---
             if not all_instances:
