@@ -180,6 +180,9 @@ _PREDEFINED_SPLITS_LOCAL_HUMAN_ARTIFACT = {
         "local_human_artifact_OCHuman": ("human_artifact_dataset/images/OCHuman/", "human_artifact_dataset/annotations/OCHuman/"),
         "local_human_artifact_FD": ("human_artifact_dataset/images/facial_descriptors_dataset_images/", "human_artifact_dataset/annotations/facial_descriptors_dataset_images/"),
         "local_human_artifact_coco_train": ("human_artifact_dataset/images/coco_train2017_human/", "human_artifact_dataset/annotations/coco_train2017_human/"),
+        # Custom dataset splits (add your own splits here after running prepare_custom_dataset.py)
+        "local_human_artifact_custom_train": ("human_artifact_dataset/images/custom_train/", "human_artifact_dataset/annotations/custom_train/"),
+        "local_human_artifact_custom_val": ("human_artifact_dataset/images/custom_val/", "human_artifact_dataset/annotations/custom_val/"),
     },
 }
 _PREDEFINED_SPLITS_GLOBAL_HUMAN_ARTIFACT = {
@@ -196,6 +199,9 @@ _PREDEFINED_SPLITS_GLOBAL_HUMAN_ARTIFACT = {
         "global_human_artifact_OCHuman": ("human_artifact_dataset/images/OCHuman/", "human_artifact_dataset/annotations/OCHuman/"),
         "global_human_artifact_FD": ("human_artifact_dataset/images/facial_descriptors_dataset_images/", "human_artifact_dataset/annotations/facial_descriptors_dataset_images/"),
         "global_human_artifact_coco_train": ("human_artifact_dataset/images/coco_train2017_human/", "human_artifact_dataset/annotations/coco_train2017_human/"),
+        # Custom dataset splits (add your own splits here after running prepare_custom_dataset.py)
+        "global_human_artifact_custom_train": ("human_artifact_dataset/images/custom_train/", "human_artifact_dataset/annotations/custom_train/"),
+        "global_human_artifact_custom_val": ("human_artifact_dataset/images/custom_val/", "human_artifact_dataset/annotations/custom_val/"),
     },
 }
 
