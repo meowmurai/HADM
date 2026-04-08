@@ -364,9 +364,10 @@ class DefaultInferencer:
         self.model = model
         self.model.eval()
         self.aug = T.ResizeShortestEdge(
-            short_edge_length=cfg.model.backbone.net.img_size, 
+            short_edge_length=cfg.model.backbone.net.img_size,
             max_size=cfg.model.backbone.net.img_size
         )
+        self.input_format = cfg.model.get("input_format", "BGR")
 
     def __call__(self, original_image, bbox=None):
         """
@@ -380,6 +381,8 @@ class DefaultInferencer:
         """
         with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
             # Apply pre-processing to image.
+            if self.input_format == "RGB":
+                original_image = original_image[:, :, ::-1]
             height, width = original_image.shape[:2]
             image = self.aug.get_transform(original_image).apply_image(original_image)
             image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
