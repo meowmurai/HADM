@@ -34,7 +34,7 @@ model.roi_heads.update(
     box_predictors=[
         L(FastRCNNOutputLayers)(
             input_shape=ShapeSpec(channels=1024),
-            test_score_thresh=0.05,
+            test_score_thresh=0.02,
             box2box_transform=L(Box2BoxTransform)(weights=(w1, w1, w2, w2)),
             cls_agnostic_bbox_reg=True,
             num_classes="${...num_classes}",

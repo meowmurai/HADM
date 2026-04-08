@@ -103,16 +103,30 @@ def do_inference(cfg, model):
     for path in tqdm(os.listdir(input_dir)):
         im_path = os.path.join(input_dir, path)
         im = read_image(im_path, format="BGR")
+        h, w = im.shape[:2]
+        aspect = max(h, w) / max(min(h, w), 1)
+        logger.info(f"Processing {path}: {w}x{h} (aspect={aspect:.2f})")
         bbox = bboxes[path]['bbox'] if bboxes is not None and path in bboxes else None
         outputs = inferencer(im, bbox=bbox)["instances"]
+        outputs_cpu = outputs.to("cpu")
+        n_det = len(outputs_cpu)
+        logger.info(f"  -> {n_det} detections")
+        if n_det > 0:
+            scores = outputs_cpu.get("scores").tolist()
+            classes = outputs_cpu.get("pred_classes").tolist()
+            class_names = [metadata.thing_classes[i] for i in classes]
+            for i, (cls_name, score) in enumerate(zip(class_names, scores)):
+                logger.info(f"     [{i}] {cls_name}: {score:.3f}")
+        else:
+            classes = []
+            class_names = []
+            scores = []
         v = Visualizer(im[:, :, ::-1], metadata=metadata)
-        out = v.draw_instance_predictions(outputs.to("cpu"))
+        out = v.draw_instance_predictions(outputs_cpu)
         out.save(os.path.join(output_dir, path))
-        classes = outputs.to("cpu").get("pred_classes").tolist()
-        class_names = [metadata.thing_classes[i] for i in classes]
         output_json[path] = {
-            "bbox": outputs.to("cpu").get("pred_boxes").tensor.tolist(),
-            "score": outputs.to("cpu").get("scores").tolist(),
+            "bbox": outputs_cpu.get("pred_boxes").tensor.tolist(),
+            "score": scores if isinstance(scores, list) else outputs_cpu.get("scores").tolist(),
             "class": class_names
         }
     with open(os.path.join(output_dir, "output.json"), "w") as f:

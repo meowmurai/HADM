@@ -21,6 +21,7 @@ from fvcore.nn.precise_bn import get_bn_modules
 from omegaconf import OmegaConf
 from torch.nn.parallel import DistributedDataParallel
 
+import numpy as np
 import detectron2.data.transforms as T
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import CfgNode, LazyConfig
@@ -363,11 +364,127 @@ class DefaultInferencer:
     def __init__(self, cfg, model):
         self.model = model
         self.model.eval()
+        self.img_size = cfg.model.backbone.net.img_size
         self.aug = T.ResizeShortestEdge(
-            short_edge_length=cfg.model.backbone.net.img_size,
-            max_size=cfg.model.backbone.net.img_size
+            short_edge_length=self.img_size,
+            max_size=self.img_size
         )
         self.input_format = cfg.model.get("input_format", "BGR")
+
+        # Multi-scale and crop-based inference settings (optional config)
+        inference_cfg = getattr(cfg, "inference", None)
+        self.multiscale_enabled = False
+        self.crop_enabled = False
+        if inference_cfg is not None:
+            self.multiscale_enabled = getattr(inference_cfg, "multiscale", False)
+            self.multiscale_scales = list(getattr(inference_cfg, "multiscale_scales", [0.75, 1.0, 1.25]))
+            self.crop_enabled = getattr(inference_cfg, "crop_inference", False)
+            self.crop_overlap = float(getattr(inference_cfg, "crop_overlap", 0.25))
+            self.crop_nms_thresh = float(getattr(inference_cfg, "crop_nms_thresh", 0.5))
+
+    def _infer_single(self, original_image, bbox=None):
+        """Run inference on a single image at its current scale."""
+        height, width = original_image.shape[:2]
+        image = self.aug.get_transform(original_image).apply_image(original_image)
+        image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+        inputs = {"image": image, "height": height, "width": width}
+        if bbox is not None:
+            image_shape_new = image.shape[1:]
+            ratio = [image_shape_new[0] / height, image_shape_new[1] / width]
+            bbox_transformed = bbox.copy()
+            bbox_transformed[0] = bbox[0] * ratio[1]
+            bbox_transformed[1] = bbox[1] * ratio[0]
+            bbox_transformed[2] = bbox[2] * ratio[1]
+            bbox_transformed[3] = bbox[3] * ratio[0]
+            res = Instances(image_shape_new)
+            res.proposal_boxes = Boxes([bbox_transformed])
+            res.objectness_logits = torch.tensor([1.])
+            inputs["proposals"] = res
+
+        predictions = self.model([inputs])[0]
+        return predictions
+
+    def _needs_cropping(self, height, width):
+        """Check if an image aspect ratio causes significant downscaling."""
+        aspect = max(height, width) / max(min(height, width), 1)
+        # If aspect ratio > 1.3, the shortest-edge resize causes the long edge
+        # to exceed max_size, leading to further downscaling and detail loss
+        return aspect > 1.3
+
+    def _generate_crops(self, height, width):
+        """Generate overlapping square crop regions covering the full image."""
+        crop_size = min(height, width)  # square crop using shorter dimension
+        stride = int(crop_size * (1 - self.crop_overlap))
+        crops = []
+
+        # Slide along the longer dimension
+        if height > width:
+            y = 0
+            while y < height:
+                y_end = min(y + crop_size, height)
+                if y_end - crop_size > 0 and y_end == height:
+                    y = y_end - crop_size  # ensure final crop is full size
+                crops.append((0, y, width, min(y + crop_size, height)))
+                if y + crop_size >= height:
+                    break
+                y += stride
+        else:
+            x = 0
+            while x < width:
+                x_end = min(x + crop_size, width)
+                if x_end - crop_size > 0 and x_end == width:
+                    x = x_end - crop_size
+                crops.append((x, 0, min(x + crop_size, width), height))
+                if x + crop_size >= width:
+                    break
+                x += stride
+
+        return crops
+
+    def _merge_instances(self, all_instances, height, width, nms_thresh):
+        """Merge detections from multiple crops/scales using NMS."""
+        if not all_instances:
+            return Instances((height, width))
+
+        from detectron2.modeling.roi_heads.fast_rcnn import fast_rcnn_inference_single_image
+        all_boxes = []
+        all_scores = []
+        all_classes = []
+
+        for inst in all_instances:
+            if len(inst) > 0:
+                all_boxes.append(inst.pred_boxes.tensor)
+                all_scores.append(inst.scores)
+                all_classes.append(inst.pred_classes)
+
+        if not all_boxes:
+            return Instances((height, width))
+
+        merged_boxes = torch.cat(all_boxes, dim=0)
+        merged_scores = torch.cat(all_scores, dim=0)
+        merged_classes = torch.cat(all_classes, dim=0)
+
+        # Per-class NMS to deduplicate overlapping detections
+        from torchvision.ops import nms
+        keep_indices = []
+        for cls_id in merged_classes.unique():
+            cls_mask = merged_classes == cls_id
+            cls_boxes = merged_boxes[cls_mask]
+            cls_scores = merged_scores[cls_mask]
+            cls_indices = cls_mask.nonzero(as_tuple=True)[0]
+            keep = nms(cls_boxes, cls_scores, nms_thresh)
+            keep_indices.append(cls_indices[keep])
+
+        if keep_indices:
+            keep_indices = torch.cat(keep_indices)
+        else:
+            return Instances((height, width))
+
+        result = Instances((height, width))
+        result.pred_boxes = Boxes(merged_boxes[keep_indices])
+        result.scores = merged_scores[keep_indices]
+        result.pred_classes = merged_classes[keep_indices]
+        return result
 
     def __call__(self, original_image, bbox=None):
         """
@@ -379,29 +496,57 @@ class DefaultInferencer:
                 the output of the model for one image only.
                 See :doc:`/tutorials/models` for details about the format.
         """
-        with torch.no_grad():  # https://github.com/sphinx-doc/sphinx/issues/4258
-            # Apply pre-processing to image.
+        with torch.no_grad():
+            # Apply color format conversion
             if self.input_format == "RGB":
                 original_image = original_image[:, :, ::-1]
             height, width = original_image.shape[:2]
-            image = self.aug.get_transform(original_image).apply_image(original_image)
-            image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-            inputs = {"image": image, "height": height, "width": width}
-            if bbox is not None:
-                image_shape_new = image.shape[1:]
-                ratio = [image_shape_new[0] / height, image_shape_new[1] / width]
-                bbox_transformed = bbox.copy()
-                bbox_transformed[0] = bbox[0] * ratio[1]
-                bbox_transformed[1] = bbox[1] * ratio[0]
-                bbox_transformed[2] = bbox[2] * ratio[1]
-                bbox_transformed[3] = bbox[3] * ratio[0]
-                res = Instances(image_shape_new)
-                res.proposal_boxes = Boxes([bbox_transformed])
-                res.objectness_logits = torch.tensor([1.])
-                inputs["proposals"] = res
 
-            predictions = self.model([inputs])[0]
-            return predictions
+            all_instances = []
+
+            # --- Crop-based inference for non-square images ---
+            if self.crop_enabled and bbox is None and self._needs_cropping(height, width):
+                crops = self._generate_crops(height, width)
+                for (x1, y1, x2, y2) in crops:
+                    crop = original_image[y1:y2, x1:x2].copy()
+                    preds = self._infer_single(crop, bbox=None)
+                    instances = preds["instances"]
+                    if len(instances) > 0:
+                        # Offset boxes back to original image coordinates
+                        instances.pred_boxes.tensor[:, 0] += x1
+                        instances.pred_boxes.tensor[:, 1] += y1
+                        instances.pred_boxes.tensor[:, 2] += x1
+                        instances.pred_boxes.tensor[:, 3] += y1
+                        all_instances.append(instances)
+
+            # --- Multi-scale inference ---
+            if self.multiscale_enabled and bbox is None:
+                import cv2
+                for scale in self.multiscale_scales:
+                    if scale == 1.0 and not self.crop_enabled:
+                        # Standard scale, run normally
+                        preds = self._infer_single(original_image, bbox=None)
+                        all_instances.append(preds["instances"])
+                    elif scale != 1.0:
+                        new_h, new_w = int(height * scale), int(width * scale)
+                        scaled_img = cv2.resize(original_image, (new_w, new_h),
+                                                interpolation=cv2.INTER_LINEAR)
+                        preds = self._infer_single(scaled_img, bbox=None)
+                        instances = preds["instances"]
+                        if len(instances) > 0:
+                            # Scale boxes back to original image coordinates
+                            instances.pred_boxes.tensor /= scale
+                            all_instances.append(instances)
+
+            # --- Standard single-scale inference (fallback or when no enhancements) ---
+            if not all_instances:
+                preds = self._infer_single(original_image, bbox=bbox)
+                return preds
+
+            # Merge all detections
+            merged = self._merge_instances(all_instances, height, width,
+                                           self.crop_nms_thresh if self.crop_enabled else 0.5)
+            return {"instances": merged}
             
 
 class DefaultTrainer(TrainerBase):

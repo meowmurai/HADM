@@ -21,6 +21,15 @@ from omegaconf import OmegaConf
 inference = OmegaConf.create()
 inference.input_dir = "demo/images"
 inference.output_dir = "demo/outputs"
+# Enhanced inference for subtle artifact detection
+# Multi-scale runs inference at multiple resolutions and merges results
+inference.multiscale = True
+inference.multiscale_scales = [0.75, 1.0, 1.25]
+# Crop-based inference splits non-square images into overlapping crops
+# to avoid heavy downscaling of portrait/landscape images
+inference.crop_inference = True
+inference.crop_overlap = 0.25
+inference.crop_nms_thresh = 0.5
 
 dataloader.train.dataset = L(get_detection_dataset_dicts)(
     names=[
