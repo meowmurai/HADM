@@ -10,20 +10,33 @@ Usage:
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import sys
 
-# Add project root to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from detectron2.data.datasets.defect_classification_dataset import (
-    DEFECT_CLASSES,
-    compute_pos_weight,
-    get_class_distribution,
-    iterative_stratification_split,
-    load_manifest,
+# Import the dataset module directly to avoid triggering detectron2's
+# __init__.py, which requires fvcore and other heavy dependencies
+# that are not needed for dataset preparation.
+_dataset_module_path = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "detectron2",
+    "data",
+    "datasets",
+    "defect_classification_dataset.py",
 )
+_spec = importlib.util.spec_from_file_location(
+    "defect_classification_dataset", _dataset_module_path
+)
+_dataset_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_dataset_mod)
+
+DEFECT_CLASSES = _dataset_mod.DEFECT_CLASSES
+compute_pos_weight = _dataset_mod.compute_pos_weight
+get_class_distribution = _dataset_mod.get_class_distribution
+iterative_stratification_split = _dataset_mod.iterative_stratification_split
+load_manifest = _dataset_mod.load_manifest
 
 
 def main():
