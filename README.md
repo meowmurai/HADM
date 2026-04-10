@@ -10,19 +10,23 @@ Dataset and source code for [Detecting Human Artifacts from Text-to-Image Models
 
 We setup the environment following [``EVA-02-det``](https://github.com/baaivision/EVA/tree/master/EVA-02/det#setup).
 
+**Requirements:** CUDA 12.1+ and PyTorch 2.1+ are required for NVIDIA H100 (sm_90) GPU support.
+
 ```bash
-conda create --name hadm python=3.8 -y
+conda create --name hadm python=3.10 -y
 conda activate hadm
 
-pip install torch==1.12.1+cu116 torchvision==0.13.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
+pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
 pip install cryptography
 pip install -r requirements.txt
-pip install -v -U git+https://github.com/facebookresearch/xformers.git@v0.0.18#egg=xformers
-pip install mmcv==1.7.1 openmim
-mim install mmcv-full
+pip install -v -U git+https://github.com/facebookresearch/xformers.git@v0.0.23.post1#egg=xformers
+pip install mmcv==2.1.0 openmim
+mim install mmcv
 
 python -m pip install -e .
 ```
+
+> **Note:** If you are using an older GPU (Volta, Turing, Ampere), the same PyTorch 2.1.2+cu121 build supports those architectures as well. For CPU-only setups, replace the `--index-url` with `https://download.pytorch.org/whl/cpu`.
 
 ## Dataset: Human Artifact Dataset (HAD)
 
