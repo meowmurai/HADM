@@ -275,7 +275,7 @@ def parse_args():
     parser.add_argument("--detection-checkpoint", type=str, default=None,
                         help="Path to full HADM-L detection checkpoint (alternative to --backbone-weights)")
     parser.add_argument("--data-dir", type=str, required=True,
-                        help="Directory containing train.json, val.json, pos_weight.json")
+                        help="Directory containing train.json, val.json, test.json, pos_weight.json")
     parser.add_argument("--image-dir", type=str, default=None,
                         help="Directory containing images (default: inferred from data-dir)")
     parser.add_argument("--output-dir", type=str, required=True,
@@ -344,8 +344,15 @@ def main():
     # -----------------------------------------------------------------------
     train_samples = load_split(os.path.join(args.data_dir, "train.json"))
     val_samples = load_split(os.path.join(args.data_dir, "val.json"))
+    test_split_path = os.path.join(args.data_dir, "test.json")
+    test_samples = load_split(test_split_path) if os.path.exists(test_split_path) else None
     pos_weight = load_pos_weight(args.data_dir).to(device)
-    logger.info("Train: %d samples, Val: %d samples", len(train_samples), len(val_samples))
+    if test_samples:
+        logger.info("Train: %d samples, Val: %d samples, Test: %d samples",
+                     len(train_samples), len(val_samples), len(test_samples))
+    else:
+        logger.info("Train: %d samples, Val: %d samples (no test set found)",
+                     len(train_samples), len(val_samples))
 
     image_dir = args.image_dir or os.path.join(
         os.path.dirname(args.data_dir.rstrip("/")), "defect_training_dataset", "images"
@@ -365,6 +372,15 @@ def main():
         val_ds, batch_size=args.batch_size, shuffle=False,
         num_workers=args.num_workers, pin_memory=True,
     )
+
+    if test_samples:
+        test_ds = DefectClassificationDataset(
+            test_samples, image_dir, transform=build_val_transform()
+        )
+        test_loader = DataLoader(
+            test_ds, batch_size=args.batch_size, shuffle=False,
+            num_workers=args.num_workers, pin_memory=True,
+        )
 
     # -----------------------------------------------------------------------
     # Model
@@ -548,6 +564,54 @@ def main():
     logger.info("Exact match ratio: %.4f", final_metrics["exact_match_ratio"])
     logger.info("Hamming loss: %.4f", final_metrics["hamming_loss"])
     logger.info("=" * 60)
+
+    # ------------------------------------------------------------------
+    # Test set evaluation (accuracy metrics report)
+    # ------------------------------------------------------------------
+    if test_samples:
+        logger.info("=" * 60)
+        logger.info("Test Set Evaluation (%d samples)", len(test_samples))
+        logger.info("=" * 60)
+
+        test_metrics = evaluate(model, test_loader, criterion, device)
+
+        # Log to tensorboard
+        writer.add_scalar("test/loss", test_metrics["loss"], 0)
+        writer.add_scalar("test/mAP", test_metrics["mAP"], 0)
+        writer.add_scalar("test/exact_match", test_metrics["exact_match_ratio"], 0)
+        writer.add_scalar("test/hamming_loss", test_metrics["hamming_loss"], 0)
+        for cls_name in DEFECT_CLASSES:
+            writer.add_scalar(f"test/AP/{cls_name}", test_metrics["per_class_ap"][cls_name], 0)
+            writer.add_scalar(f"test/F1/{cls_name}", test_metrics["per_class_f1"][cls_name], 0)
+
+        logger.info("Test mAP: %.4f", test_metrics["mAP"])
+        logger.info("Per-class results:")
+        for cls_name in DEFECT_CLASSES:
+            logger.info("  %s: AP=%.4f  F1=%.4f  threshold=%.2f",
+                         cls_name, test_metrics["per_class_ap"][cls_name],
+                         test_metrics["per_class_f1"][cls_name],
+                         test_metrics["thresholds"][cls_name])
+        logger.info("Exact match ratio: %.4f", test_metrics["exact_match_ratio"])
+        logger.info("Hamming loss: %.4f", test_metrics["hamming_loss"])
+
+        # Save test metrics report to JSON
+        test_report = {
+            "num_samples": len(test_samples),
+            "loss": test_metrics["loss"],
+            "mAP": test_metrics["mAP"],
+            "per_class_ap": test_metrics["per_class_ap"],
+            "per_class_f1": test_metrics["per_class_f1"],
+            "thresholds": test_metrics["thresholds"],
+            "exact_match_ratio": test_metrics["exact_match_ratio"],
+            "hamming_loss": test_metrics["hamming_loss"],
+        }
+        test_report_path = os.path.join(args.output_dir, "test_metrics.json")
+        with open(test_report_path, "w") as f:
+            json.dump(test_report, f, indent=2)
+        logger.info("Saved test metrics report to %s", test_report_path)
+        logger.info("=" * 60)
+    else:
+        logger.info("No test set found — skipping test evaluation.")
 
     writer.close()
 

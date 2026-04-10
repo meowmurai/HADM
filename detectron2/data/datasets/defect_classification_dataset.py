@@ -75,6 +75,53 @@ def iterative_stratification_split(samples, train_ratio=0.8, seed=42):
     return train_samples, val_samples
 
 
+def iterative_stratification_train_val_test_split(
+    samples, train_ratio=0.7, val_ratio=0.15, seed=42
+):
+    """
+    Three-way iterative stratification split for multi-label data.
+
+    Splits into train/val/test sets by first separating out the test set,
+    then splitting the remainder into train and val.
+    """
+    from skmultilearn.model_selection import iterative_train_test_split
+
+    test_ratio = 1.0 - train_ratio - val_ratio
+    assert test_ratio > 0, "train_ratio + val_ratio must be < 1.0"
+
+    rng = np.random.RandomState(seed)
+    filenames = np.array([s[0] for s in samples]).reshape(-1, 1)
+    labels = np.array([s[1] for s in samples])
+
+    # Shuffle before split for reproducibility
+    indices = rng.permutation(len(samples))
+    filenames = filenames[indices]
+    labels = labels[indices]
+
+    # First split: separate test set from train+val
+    X_trainval, y_trainval, X_test, y_test = iterative_train_test_split(
+        filenames, labels, test_size=test_ratio
+    )
+
+    # Second split: separate val from train
+    # val_ratio relative to the train+val portion
+    val_ratio_adjusted = val_ratio / (train_ratio + val_ratio)
+    X_train, y_train, X_val, y_val = iterative_train_test_split(
+        X_trainval, y_trainval, test_size=val_ratio_adjusted
+    )
+
+    train_samples = [
+        (fn[0], lbl.tolist()) for fn, lbl in zip(X_train, y_train)
+    ]
+    val_samples = [
+        (fn[0], lbl.tolist()) for fn, lbl in zip(X_val, y_val)
+    ]
+    test_samples = [
+        (fn[0], lbl.tolist()) for fn, lbl in zip(X_test, y_test)
+    ]
+    return train_samples, val_samples, test_samples
+
+
 def compute_pos_weight(samples):
     """
     Compute per-class pos_weight for BCEWithLogitsLoss.

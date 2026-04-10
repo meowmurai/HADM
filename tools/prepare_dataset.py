@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Prepare train/val splits for the defect classification dataset.
+Prepare train/val/test splits for the defect classification dataset.
 
 Usage:
     python tools/prepare_dataset.py \
         --manifest defect_training_dataset/share_manifest.json \
         --output-dir data/splits \
-        --train-ratio 0.8
+        --train-ratio 0.7 \
+        --val-ratio 0.15 \
+        --test-ratio 0.15
 """
 
 import argparse
@@ -22,6 +24,7 @@ from detectron2.data.datasets.defect_classification_dataset import (
     compute_pos_weight,
     get_class_distribution,
     iterative_stratification_split,
+    iterative_stratification_train_val_test_split,
     load_manifest,
 )
 
@@ -45,8 +48,20 @@ def main():
     parser.add_argument(
         "--train-ratio",
         type=float,
-        default=0.8,
-        help="Fraction of data for training (default: 0.8)",
+        default=0.7,
+        help="Fraction of data for training (default: 0.7)",
+    )
+    parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.15,
+        help="Fraction of data for validation (default: 0.15)",
+    )
+    parser.add_argument(
+        "--test-ratio",
+        type=float,
+        default=0.15,
+        help="Fraction of data for testing (default: 0.15)",
     )
     parser.add_argument(
         "--seed",
@@ -73,15 +88,33 @@ def main():
         pct = 100.0 * count / dist["total"]
         print(f"    {cls}: {count} ({pct:.1f}%)")
 
+    # Validate ratios
+    total_ratio = args.train_ratio + args.val_ratio + args.test_ratio
+    if abs(total_ratio - 1.0) > 1e-6:
+        print(f"WARNING: ratios sum to {total_ratio:.4f}, not 1.0. Normalizing.")
+        args.train_ratio /= total_ratio
+        args.val_ratio /= total_ratio
+        args.test_ratio /= total_ratio
+
     # Perform iterative stratification split
     print(f"\nPerforming iterative stratification split "
-          f"(train={args.train_ratio:.0%}, val={1 - args.train_ratio:.0%})...")
-    train_samples, val_samples = iterative_stratification_split(
-        samples, train_ratio=args.train_ratio, seed=args.seed
+          f"(train={args.train_ratio:.0%}, val={args.val_ratio:.0%}, "
+          f"test={args.test_ratio:.0%})...")
+    train_samples, val_samples, test_samples = (
+        iterative_stratification_train_val_test_split(
+            samples,
+            train_ratio=args.train_ratio,
+            val_ratio=args.val_ratio,
+            seed=args.seed,
+        )
     )
 
     # Print split distributions
-    for split_name, split_samples in [("Train", train_samples), ("Val", val_samples)]:
+    for split_name, split_samples in [
+        ("Train", train_samples),
+        ("Val", val_samples),
+        ("Test", test_samples),
+    ]:
         print(f"\n=== {split_name} Distribution ({len(split_samples)} samples) ===")
         split_dist = get_class_distribution(split_samples)
         print(f"  Clean: {split_dist['clean']}")
@@ -113,6 +146,7 @@ def main():
 
     save_split(train_samples, "train.json")
     save_split(val_samples, "val.json")
+    save_split(test_samples, "test.json")
 
     # Also save pos_weight for use in training
     pw_path = os.path.join(args.output_dir, "pos_weight.json")
