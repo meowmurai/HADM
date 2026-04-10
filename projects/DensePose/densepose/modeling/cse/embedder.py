@@ -101,7 +101,7 @@ class Embedder(nn.Module):
             with PathManager.open(fpath, "rb") as hFile:
                 # pyre-fixme[6]: For 1st param expected `Union[PathLike[typing.Any],
                 #  IO[bytes], str, BinaryIO]` but got `Union[IO[bytes], IO[str]]`.
-                state_dict = torch.load(hFile, map_location=torch.device("cpu"))
+                state_dict = torch.load(hFile, map_location=torch.device("cpu"), weights_only=False)
         if state_dict is not None and "model" in state_dict:
             state_dict_local = {}
             for key in state_dict["model"]:

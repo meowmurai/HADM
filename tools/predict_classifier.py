@@ -65,7 +65,7 @@ def build_inference_transform():
 
 def load_model(checkpoint_path, device):
     """Load trained classifier from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model = build_classifier(
         checkpoint_path=None, num_classes=NUM_CLASSES, dropout=0.0
     )

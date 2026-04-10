@@ -387,7 +387,7 @@ class GeneralizedRCNNWithTTA(nn.Module):
                     self.cfg.test.aug.pred_dir,
                     os.path.basename(aug_input['file_name']).replace('.jpg', '_{}x{}.pth'.format(min_s, max_s))
                 )
-                result = torch.load(file_name).to("cuda:{}".format(comm.get_local_rank()))
+                result = torch.load(file_name, weights_only=False).to("cuda:{}".format(comm.get_local_rank()))
                 # post filtering if needed
                 use_soft_nms_before_merge = False
                 if use_soft_nms_before_merge:

@@ -71,7 +71,7 @@ def extract_backbone_weights(checkpoint_path):
     Returns:
         dict: cleaned state dict mapping ViT parameter names to tensors.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     model_state = checkpoint.get("model", checkpoint)
 
     prefix = "backbone.net."

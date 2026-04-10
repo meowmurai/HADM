@@ -391,7 +391,7 @@ def main():
         model = build_classifier(
             checkpoint_path=None, num_classes=NUM_CLASSES, dropout=args.dropout
         )
-        backbone_weights = torch.load(args.backbone_weights, map_location="cpu")
+        backbone_weights = torch.load(args.backbone_weights, map_location="cpu", weights_only=False)
         result = model.backbone.load_state_dict(backbone_weights, strict=False)
         if result.missing_keys:
             logger.warning("Missing backbone keys: %s", result.missing_keys)
@@ -553,7 +553,7 @@ def main():
     logger.info("Training complete. Best val mAP: %.4f", best_mAP)
     logger.info("Per-class AP:")
     # Re-evaluate best model for final report
-    best_ckpt = torch.load(best_path, map_location=device)
+    best_ckpt = torch.load(best_path, map_location=device, weights_only=False)
     model.load_state_dict(best_ckpt["model"])
     final_metrics = evaluate(model, val_loader, criterion, device)
     for cls_name in DEFECT_CLASSES:
