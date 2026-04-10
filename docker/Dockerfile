@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get install -y \
@@ -17,7 +17,7 @@ ENV PATH="/home/appuser/.local/bin:${PATH}"
 # install dependencies
 # See https://pytorch.org/ for other options if you use a different version of CUDA
 RUN pip install --user tensorboard cmake onnx   # cmake from apt-get is too old
-RUN pip install --user torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
+RUN pip install --user torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 
 RUN pip install --user 'git+https://github.com/facebookresearch/fvcore'
 # install detectron2
