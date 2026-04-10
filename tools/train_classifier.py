@@ -483,7 +483,7 @@ def main():
 
     # Wrap with DDP if distributed
     if is_dist_available():
-        model = DDP(model, device_ids=[device.index])
+        model = DDP(model, device_ids=[device.index], find_unused_parameters=True)
     raw_model = model.module if isinstance(model, DDP) else model
 
     # -----------------------------------------------------------------------
