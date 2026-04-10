@@ -17,11 +17,11 @@ conda create --name hadm python=3.10 -y
 conda activate hadm
 
 pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
-pip install cryptography
+pip install setuptools cryptography
 pip install -r requirements.txt
 pip install xformers==0.0.29.post3
-pip install mmcv==2.2.0 openmim
-mim install mmcv
+pip install openmim
+mim install mmcv==2.2.0
 
 python -m pip install -e .
 ```
