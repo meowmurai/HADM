@@ -23,7 +23,7 @@ pip install xformers==0.0.29.post3
 pip install openmim
 mim install mmcv==2.2.0
 
-python -m pip install -e .
+python -m pip install --no-build-isolation -e .
 ```
 
 > **Note:** The `cu124` PyTorch wheels are forward-compatible with CUDA 12.5–12.8 driver installations — no need to downgrade your system CUDA. For older GPUs (Volta, Turing, Ampere), the same build works. For CPU-only setups, replace the `--index-url` with `https://download.pytorch.org/whl/cpu`.
