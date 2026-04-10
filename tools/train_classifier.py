@@ -38,11 +38,7 @@ from sklearn.metrics import average_precision_score, f1_score
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
-
-try:
-    from torch.utils.tensorboard import SummaryWriter
-except ImportError:
-    SummaryWriter = None
+from torch.utils.tensorboard import SummaryWriter
 
 # Allow running from repo root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -417,11 +413,9 @@ def main():
     # Output dir & TensorBoard (rank 0 only)
     os.makedirs(args.output_dir, exist_ok=True)
     writer = None
-    if is_main_process() and SummaryWriter is not None:
+    if is_main_process():
         tb_dir = os.path.join(args.output_dir, "tensorboard")
         writer = SummaryWriter(log_dir=tb_dir)
-    elif is_main_process():
-        logger.warning("tensorboard not installed — skipping TensorBoard logging")
 
     # -----------------------------------------------------------------------
     # Data
@@ -658,8 +652,7 @@ def main():
         logger.info("Hamming loss: %.4f", final_metrics["hamming_loss"])
         logger.info("=" * 60)
 
-        if writer is not None:
-            writer.close()
+        writer.close()
 
     cleanup_distributed()
 
